@@ -1,6 +1,6 @@
 FROM gliderlabs/alpine:latest
 
-MAINTAINER Aman Singh akingsukh@gmail.com
+MAINTAINER Aman Kumar Singh akingsukh@gmail.com
 
 ADD . /pythonapp
 
