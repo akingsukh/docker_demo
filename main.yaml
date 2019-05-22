@@ -1,0 +1,116 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  ECS Cluster
+Parameters:
+  CidrBlock:
+    Description: Please enter the IP range (CIDR notation) for this VPC
+    Type: String
+    Default: 10.10.0.0/16
+
+
+  KeyName:
+    Description: Name of an existing EC2 KeyPair to enable SSH access to the container
+      instances
+    Type: AWS::EC2::KeyPair::KeyName
+    Default: demo-aman
+    ConstraintDescription: Must be a valid EC2 keypair.
+
+  InstanceType:
+    Description: Container instances EC2 instance type
+    Type: String
+    Default: t2.micro
+    AllowedValues:
+      - t2.nano
+      - t2.micro
+      - t2.small
+      - t2.medium
+      - t3.medium
+      - t2.large
+      - t2.xlarge
+      - t2.2xlarge
+
+    ConstraintDescription: must be a valid EC2 instance type.
+
+
+  ImageId:
+    Description: AMI ID optimized for ecs. Do not change to get latest
+    #Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    #Default: /aws/service/ecs/optimized-ami/amazon-linux/recommended/image_id
+    Type: AWS::EC2::Image::Id
+    Default: ami-0cf953afde70921a2
+
+
+  RepositoryName:
+    Type: String
+    Default: 695292474035.dkr.ecr.ap-south-1.amazonaws.com/demo1
+
+
+  ALBPort:
+    Type: String
+    Default: 80
+  ContainerPort:
+    Description: Port of Web api on docker
+    Type: String
+    Default: 5000
+
+
+
+Resources:
+  VPC:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub "https://s3.amazonaws.com/aman-demo-ecs/vpc.yaml"
+      Parameters:
+        CidrBlock: !Ref CidrBlock
+
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName} Vpc
+  SG:
+    Type: AWS::CloudFormation::Stack
+    DependsOn : VPC
+    Properties:
+      TemplateURL: !Sub "https://s3.amazonaws.com/aman-ecs-demo/sg.yaml"
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName} sg
+
+
+  ECS:
+    Type: AWS::CloudFormation::Stack
+    DependsOn :
+      - VPC
+      - SG
+    Properties:
+      TemplateURL: !Sub "https://s3.amazonaws.com/aman-ecs-demo/ecs.yaml"
+      Parameters:
+        KeyName: !Ref KeyName
+        InstanceType: !Ref InstanceType
+        RepositoryName: !Ref RepositoryName
+        ImageId: !Ref ImageId
+
+
+  ALB:
+    Type: AWS::CloudFormation::Stack
+    DependsOn :
+      - VPC
+      - SG
+      - ECS
+    Properties:
+      TemplateURL: !Sub "https://s3.amazonaws.com/aman-ecs-demo/alb2.yaml"
+      Parameters:
+        ALBPort: !Ref ALBPort
+        ContainerPort: !Ref ContainerPort
+
+
+  Service:
+    Type: AWS::CloudFormation::Stack
+    DependsOn :
+      - VPC
+      - SG
+      - ECS
+      - ALB
+    Properties:
+      TemplateURL: !Sub "https://s3.amazonaws.com/aman-ecs-demo/service.yaml"
+      Parameters:
+        ContainerPort: !Ref ContainerPort

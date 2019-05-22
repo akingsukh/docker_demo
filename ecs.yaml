@@ -1,0 +1,146 @@
+Description: Deploys an ECS Cluster
+
+
+Parameters:
+
+  KeyName:
+    Description: Name of an existing EC2 KeyPair to enable SSH access to the container
+      instances
+    Type: AWS::EC2::KeyPair::KeyName
+    Default: demo-aman
+    ConstraintDescription: Must be a valid EC2 keypair.
+
+  InstanceType:
+    Description: Container instances EC2 instance type
+    Type: String
+    Default: t2.micro
+    AllowedValues:
+      - t2.nano
+      - t2.micro
+      - t2.small
+      - t2.medium
+      - t3.medium
+      - t2.large
+      - t2.xlarge
+      - t2.2xlarge
+
+    ConstraintDescription: must be a valid EC2 instance type.
+
+
+  ImageId:
+    #Description: AMI ID optimized for ecs. Do not change to get latest
+    #Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    #Default: /aws/service/ecs/optimized-ami/amazon-linux/recommended/image_id
+    Description: AMI ID
+    Type: AWS::EC2::Image::Id
+    Default: ami-0cf953afde70921a2
+
+
+  RepositoryName:
+    Type: String
+    Default: 695292474035.dkr.ecr.ap-south-1.amazonaws.com/demo1
+
+
+
+Resources:
+
+
+  ECSCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Ref AWS::StackName
+
+  EC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      AvailabilityZone: !Select [ 0, !GetAZs { Ref: "AWS::Region" } ]
+      IamInstanceProfile: !Ref ContainerInstanceProfile
+      ImageId: !Ref ImageId
+      InstanceType: !Ref InstanceType
+      KeyName: !Ref KeyName
+      SecurityGroupIds:
+        - Fn::ImportValue:
+            "demo-sg-ecs"
+      SubnetId:
+        Fn::ImportValue:
+          "demo-PrivateSubnet1"
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName} Container Instance"
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          yum -y update
+          yum install -y aws-cfn-bootstrap aws-cli
+          echo ECS_CLUSTER=${ECSCluster} >> /etc/ecs/ecs.config
+          # SSM Agent
+          cd /tmp
+          sudo yum install -y https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/linux_amd64/amazon-ssm-agent.rpm
+
+  ContainerInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles:
+        - !Ref 'ContainerServiceRole'
+      InstanceProfileName: !Sub "${AWS::StackName}InstanceProfile"
+
+  ContainerServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${AWS::StackName}InstanceRole"
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Policies:
+          - PolicyName: ecs-service
+            PolicyDocument:
+              Statement:
+                - Effect: Allow
+                  Action:
+                    - ecs:*
+                    - ecr:*
+                    - logs:CreateLogStream
+                    - logs:PutLogEvents
+                    - logs:CreateLogGroup
+                    - logs:DescribeLogStreams
+                    - ec2:DescribeInstances
+                    - elasticloadbalancing:RegisterInstancesWithLoadBalancer
+                  Resource:
+                    - "*"
+      Path: /
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role
+        - arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforSSM
+  ECRRepository:
+    Type: "AWS::ECR::Repository"
+    Properties:
+      RepositoryName: !Ref RepositoryName
+      RepositoryPolicyText:
+        Version: "2012-10-17"
+        Statement:
+          -
+            Sid: AllowPushPull
+            Effect: Allow
+            Principal:
+              AWS:
+                - "*"
+            Action:
+              - "ecr:GetDownloadUrlForLayer"
+              - "ecr:BatchGetImage"
+              - "ecr:BatchCheckLayerAvailability"
+              - "ecr:PutImage"
+              - "ecr:InitiateLayerUpload"
+              - "ecr:UploadLayerPart"
+              - "ecr:CompleteLayerUpload"
+Outputs:
+  Cluster:
+    Description: The created ECS cluster
+    Value: !Ref 'ECSCluster'
+    Export:
+      Name: "demo-ecs-cluster"
